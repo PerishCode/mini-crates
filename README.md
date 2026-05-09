@@ -29,6 +29,8 @@ cp .env.example .env
 docker compose up -d db minio minio-init api
 ```
 
+`DATABASE_URL` is supported directly. For Kubernetes-style secret wiring, the API can also build it from `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`.
+
 Create a real admin token from the bootstrap token:
 
 ```sh

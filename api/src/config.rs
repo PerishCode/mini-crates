@@ -42,10 +42,7 @@ impl ConfigServiceImpl {
             .ok()
             .and_then(|value| value.trim().parse::<u16>().ok())
             .unwrap_or(3333);
-        let database_url = required_env(
-            "DATABASE_URL",
-            "postgres://mini_crates:mini_crates@localhost:55433/mini_crates",
-        );
+        let database_url = database_url();
         let registry_public_url =
             env_or("REGISTRY_PUBLIC_URL", &format!("http://localhost:{port}"));
         let bootstrap_admin_token = env::var("BOOTSTRAP_ADMIN_TOKEN")
@@ -149,4 +146,79 @@ fn required_env(key: &str, dev_default: &str) -> String {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| dev_default.to_owned())
+}
+
+fn database_url() -> String {
+    if let Some(value) = env::var("DATABASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return value;
+    }
+
+    let user = env::var("DATABASE_USER").ok();
+    let password = env::var("DATABASE_PASSWORD").ok();
+    match (user, password) {
+        (Some(user), Some(password)) if !user.trim().is_empty() && !password.trim().is_empty() => {
+            let host = env_or("DATABASE_HOST", "localhost");
+            let port = env_or("DATABASE_PORT", "5432");
+            let name = env_or("DATABASE_NAME", "mini_crates");
+            database_url_from_parts(
+                user.trim(),
+                password.trim(),
+                host.trim(),
+                port.trim(),
+                name.trim(),
+            )
+        }
+        _ => "postgres://mini_crates:mini_crates@localhost:55433/mini_crates".to_owned(),
+    }
+}
+
+fn database_url_from_parts(
+    user: &str,
+    password: &str,
+    host: &str,
+    port: &str,
+    name: &str,
+) -> String {
+    format!(
+        "postgres://{}:{}@{}:{}/{}",
+        percent_encode_userinfo(user),
+        percent_encode_userinfo(password),
+        host,
+        port,
+        name
+    )
+}
+
+fn percent_encode_userinfo(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{database_url_from_parts, percent_encode_userinfo};
+
+    #[test]
+    fn builds_database_url_from_discrete_env_parts() {
+        assert_eq!(
+            database_url_from_parts("mini", "p@ss:word/1", "postgres.core", "5432", "crates"),
+            "postgres://mini:p%40ss%3Aword%2F1@postgres.core:5432/crates"
+        );
+    }
+
+    #[test]
+    fn percent_encodes_database_userinfo() {
+        assert_eq!(percent_encode_userinfo("mini_crates"), "mini_crates");
+        assert_eq!(percent_encode_userinfo("p@ss:word/1"), "p%40ss%3Aword%2F1");
+    }
 }
