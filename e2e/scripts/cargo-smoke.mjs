@@ -68,6 +68,7 @@ async function exerciseTokenRotation() {
     token: adminToken
   });
   await expectUnauthorized(rotated.token);
+  await expectTokenAbsent(created.summary.id);
 }
 
 async function expectWhoami(token) {
@@ -83,6 +84,13 @@ async function expectUnauthorized(token) {
   });
   if (response.status !== 401) {
     throw new Error(`expected token to be unauthorized, got ${response.status}`);
+  }
+}
+
+async function expectTokenAbsent(tokenId) {
+  const tokens = await request('/api/v1/tokens', { token: adminToken });
+  if (tokens.some((token) => token.id === tokenId)) {
+    throw new Error(`revoked token still listed: ${tokenId}`);
   }
 }
 

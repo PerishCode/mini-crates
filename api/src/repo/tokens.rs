@@ -172,6 +172,8 @@ SELECT id, name, token_prefix, admin,
        revoked_at::text AS revoked_at,
        last_used_at::text AS last_used_at
 FROM tokens
+WHERE revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC
 "#,
                 vec![],
