@@ -1,0 +1,72 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mini_crates}
+      POSTGRES_USER: ${POSTGRES_USER:-mini_crates}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mini_crates}
+    ports:
+      - "${DB_PUBLIC_PORT:-55433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mini_crates} -d ${POSTGRES_DB:-mini_crates}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PUBLIC_PORT:-59000}:9000"
+      - "${MINIO_CONSOLE_PUBLIC_PORT:-59001}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 "${S3_ACCESS_KEY_ID:-minioadmin}" "${S3_SECRET_ACCESS_KEY:-minioadmin}"
+        && mc mb -p "local/${S3_BUCKET:-mini-crates}" || true
+
+  api:
+    build:
+      context: ./api
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3333
+      DATABASE_URL: ${DATABASE_URL:-postgres://mini_crates:mini_crates@db:5432/mini_crates}
+      REGISTRY_PUBLIC_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:3334}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-dev-bootstrap-admin-token}
+      TOKEN_PEPPER: ${TOKEN_PEPPER:-dev-token-pepper-change-me}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-mini-crates}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+    ports:
+      - "${API_PUBLIC_PORT:-3334}:3333"
+
+volumes:
+  db-data:
+  minio-data:
